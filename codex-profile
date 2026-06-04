@@ -16,6 +16,7 @@ SHARED_CONFIG="$SHARED_DIR/config.toml"
 # config.toml: MCP servers, model defaults, approval policies, etc.
 # (Authentication state in auth.json is intentionally NOT shared.)
 SHARED_FILES=("config.toml")
+PROFILE_NAME_PATTERN='^[a-zA-Z0-9_-]+$'
 
 # --- colors (only when stdout is a tty) -------------------------------------
 if [[ -t 1 ]]; then
@@ -34,16 +35,65 @@ ensure_dirs() {
     mkdir -p "$PROFILES_DIR"
 }
 
+is_valid_profile_name() {
+    local name="${1:-}"
+    [[ -n "$name" ]] || return 1
+    [[ "$name" != "_shared" ]] || return 1
+    [[ "$name" =~ $PROFILE_NAME_PATTERN ]]
+}
+
+validate_profile_name() {
+    local name="${1:-}"
+    is_valid_profile_name "$name" || die "name must be alphanumeric / dash / underscore and not reserved"
+}
+
+warn_invalid_profile_dir() {
+    echo "${C_YELLOW}warning:${C_RESET} skipping invalid profile directory: $1" >&2
+}
+
 profile_path() {
+    validate_profile_name "$1"
     echo "$PROFILES_DIR/$1"
 }
 
 profile_exists() {
+    validate_profile_name "$1"
     [[ -d "$(profile_path "$1")" ]]
 }
 
 profile_has_auth() {
+    validate_profile_name "$1"
     [[ -f "$(profile_path "$1")/auth.json" ]]
+}
+
+active_profile() {
+    [[ -f "$STATE_FILE" ]] || return 0
+
+    local active
+    active="$(cat "$STATE_FILE" 2>/dev/null || true)"
+    [[ -n "$active" ]] || return 0
+    if ! is_valid_profile_name "$active"; then
+        die "active profile state is invalid: $active"
+    fi
+    echo "$active"
+}
+
+write_active_profile() {
+    local name="$1"
+    validate_profile_name "$name"
+    ensure_dirs
+
+    local tmp
+    tmp="$(mktemp "$PROFILES_DIR/.active.tmp.XXXXXX")"
+    if ! printf '%s\n' "$name" > "$tmp"; then
+        rm -f "$tmp"
+        die "failed to write active profile state"
+    fi
+    chmod 600 "$tmp" 2>/dev/null || true
+    if ! mv -f "$tmp" "$STATE_FILE"; then
+        rm -f "$tmp"
+        die "failed to update active profile state"
+    fi
 }
 
 # --- shared config helpers --------------------------------------------------
@@ -60,6 +110,7 @@ ensure_shared() {
 #   "broken"  : symlink to wrong/non-existent target
 shared_file_status() {
     local profile="$1" filename="$2"
+    validate_profile_name "$profile"
     local path="$(profile_path "$profile")/$filename"
     local target="$SHARED_DIR/$filename"
 
@@ -84,6 +135,7 @@ shared_file_status() {
 # If the profile already has a regular file, refuse unless --force.
 link_shared_file() {
     local profile="$1" filename="$2" force="${3:-}"
+    validate_profile_name "$profile"
     local path="$(profile_path "$profile")/$filename"
     local target="$SHARED_DIR/$filename"
 
@@ -118,6 +170,7 @@ link_shared_file() {
 # Detach a profile's file from shared and make it a private copy.
 unlink_shared_file() {
     local profile="$1" filename="$2"
+    validate_profile_name "$profile"
     local path="$(profile_path "$profile")/$filename"
     local target="$SHARED_DIR/$filename"
 
@@ -145,22 +198,33 @@ unlink_shared_file() {
 }
 
 check_running_codex() {
-    local pids
-    pids=$(pgrep -f 'codex' 2>/dev/null | xargs -r ps -p 2>/dev/null | \
-           grep -vE 'codex-profile|codex-find|grep' | awk 'NR>1 {print $1}')
+    command -v pgrep >/dev/null 2>&1 || return 0
+    command -v ps >/dev/null 2>&1 || return 0
+
+    local candidates pids pid line command_name
+    candidates="$(pgrep -x codex 2>/dev/null || true)"
+    if [[ -z "$candidates" ]]; then
+        candidates="$(pgrep -f 'codex' 2>/dev/null || true)"
+    fi
+    pids=""
+    for pid in $candidates; do
+        line="$(ps -p "$pid" -o comm=,args= 2>/dev/null || true)"
+        [[ -n "$line" ]] || continue
+        command_name="${line%% *}"
+        command_name="${command_name##*/}"
+        [[ "$command_name" == "codex" ]] || continue
+        [[ "$line" =~ codex-profile|codex-find|test/runner.sh|grep|pgrep ]] && continue
+        pids="${pids}${pid} "
+    done
     if [[ -n "$pids" ]]; then
         echo "${C_YELLOW}warning:${C_RESET} codex process(es) still running:" >&2
-        ps -p $pids -o pid,command 2>/dev/null | grep -vE 'codex-profile|codex-find' >&2
+        ps -p $pids -o pid,command 2>/dev/null | grep -vE 'codex-profile|codex-find' >&2 || true
         echo >&2
         echo "Switching while codex is running can corrupt OAuth refresh tokens." >&2
         echo "Quit them first, or run: ${C_CYAN}pkill -f codex${C_RESET}" >&2
         read -r -p "Continue anyway? [y/N] " ans
         [[ "$ans" =~ ^[Yy]$ ]] || die "aborted"
     fi
-}
-
-active_profile() {
-    [[ -f "$STATE_FILE" ]] && cat "$STATE_FILE" || true
 }
 
 list_profiles() {
@@ -170,11 +234,15 @@ list_profiles() {
     local found=0
 
     if [[ -d "$PROFILES_DIR" ]]; then
-        for dir in "$PROFILES_DIR"/*/; do
+        for dir in "$PROFILES_DIR"/*/ "$PROFILES_DIR"/.[!.]*/; do
             [[ -d "$dir" ]] || continue
             local name
             name="$(basename "$dir")"
             [[ "$name" == "_shared" ]] && continue
+            if ! is_valid_profile_name "$name"; then
+                warn_invalid_profile_dir "$name"
+                continue
+            fi
             found=1
 
             local marker="  "
@@ -192,7 +260,7 @@ list_profiles() {
     fi
 
     if [[ $found -eq 0 ]]; then
-        echo "${C_DIM}(no profiles yet ??try: codex-profile add <name>)${C_RESET}"
+        echo "${C_DIM}(no profiles yet - try: codex-profile add <name>)${C_RESET}"
     fi
 }
 
@@ -205,7 +273,7 @@ cmd_list() {
 cmd_add() {
     local name="${1:-}"
     [[ -n "$name" ]] || die "usage: codex-profile add <name>"
-    [[ "$name" =~ ^[a-zA-Z0-9_-]+$ ]] || die "name must be alphanumeric / dash / underscore"
+    validate_profile_name "$name"
 
     ensure_dirs
     local path
@@ -235,7 +303,7 @@ cmd_add() {
 cmd_import_current() {
     # Pull the user's existing ~/.codex into a named profile, then make it active.
     local name="${1:-default}"
-    [[ "$name" =~ ^[a-zA-Z0-9_-]+$ ]] || die "name must be alphanumeric / dash / underscore"
+    validate_profile_name "$name"
 
     ensure_dirs
     local src="$HOME/.codex"
@@ -272,20 +340,20 @@ cmd_import_current() {
         fi
     done
 
-    echo "$name" > "$STATE_FILE"
+    write_active_profile "$name"
     ok "imported existing ~/.codex as profile '${C_BOLD}$name${C_RESET}' and made it active"
 }
 
 cmd_switch() {
     local name="${1:-}"
     [[ -n "$name" ]] || die "usage: codex-profile switch <name>"
+    validate_profile_name "$name"
 
     profile_exists "$name" || die "profile '$name' not found. try: codex-profile add $name"
 
     check_running_codex
 
-    ensure_dirs
-    echo "$name" > "$STATE_FILE"
+    write_active_profile "$name"
 
     local path
     path="$(profile_path "$name")"
@@ -293,7 +361,7 @@ cmd_switch() {
     ok "active profile is now ${C_BOLD}$name${C_RESET}"
 
     if ! profile_has_auth "$name"; then
-        echo "   ${C_YELLOW}no auth.json yet ??codex will prompt for OAuth login${C_RESET}"
+        echo "   ${C_YELLOW}no auth.json yet - codex will prompt for OAuth login${C_RESET}"
     fi
 
     echo
@@ -344,10 +412,9 @@ cmd_run() {
 cmd_remove() {
     local name="${1:-}"
     [[ -n "$name" ]] || die "usage: codex-profile remove <name>"
-    profile_exists "$name" || die "profile '$name' not found"
 
     local path
-    path="$(profile_path "$name")"
+    path="$(assert_safe_profile_target "$name")"
 
     echo "${C_YELLOW}This will delete:${C_RESET} $path"
     echo "${C_YELLOW}All auth + sessions for '$name' will be lost.${C_RESET}"
@@ -360,6 +427,22 @@ cmd_remove() {
         info "removed active state (no active profile now)"
     fi
     ok "removed profile '$name'"
+}
+
+assert_safe_profile_target() {
+    local name="$1"
+    validate_profile_name "$name"
+    [[ "$name" != "_shared" ]] || die "cannot remove reserved profile '$name'"
+    ensure_dirs
+    profile_exists "$name" || die "profile '$name' not found"
+
+    local path base target
+    path="$(profile_path "$name")"
+    [[ ! -L "$path" ]] || die "refusing to remove symlink profile '$name'"
+    base="$(readlink -f "$PROFILES_DIR")" || die "cannot resolve profiles directory"
+    target="$(readlink -f "$path")" || die "cannot resolve profile target"
+    [[ "$target" != "$base" && "$target" == "$base"/* ]] || die "refusing to remove unmanaged profile target: $target"
+    echo "$path"
 }
 
 cmd_config() {
@@ -380,7 +463,7 @@ cmd_config() {
 
 cmd_config_help() {
     cat <<EOF
-${C_BOLD}codex-profile config${C_RESET} ??manage shared config across profiles
+${C_BOLD}codex-profile config${C_RESET} - manage shared config across profiles
 
 ${C_BOLD}USAGE${C_RESET}
   codex-profile config <subcommand>
@@ -427,11 +510,15 @@ cmd_config_status() {
 
     echo "${C_BOLD}Per-profile config.toml:${C_RESET}"
     local found=0
-    for dir in "$PROFILES_DIR"/*/; do
+    for dir in "$PROFILES_DIR"/*/ "$PROFILES_DIR"/.[!.]*/; do
         [[ -d "$dir" ]] || continue
         local name
         name="$(basename "$dir")"
         [[ "$name" == "_shared" ]] && continue
+        if ! is_valid_profile_name "$name"; then
+            warn_invalid_profile_dir "$name"
+            continue
+        fi
         found=1
 
         local status
@@ -446,11 +533,13 @@ cmd_config_status() {
         printf "  %-20s %s\n" "$name" "$marker"
     done
     [[ $found -eq 0 ]] && echo "  ${C_DIM}(no profiles)${C_RESET}"
+    return 0
 }
 
 cmd_config_link() {
     local name="${1:-}"
     [[ -n "$name" ]] || die "usage: codex-profile config link <profile> [--force]"
+    validate_profile_name "$name"
     profile_exists "$name" || die "profile '$name' not found"
     local force=""
     [[ "${2:-}" == "--force" ]] && force="--force"
@@ -465,6 +554,7 @@ cmd_config_link() {
 cmd_config_unlink() {
     local name="${1:-}"
     [[ -n "$name" ]] || die "usage: codex-profile config unlink <profile>"
+    validate_profile_name "$name"
     profile_exists "$name" || die "profile '$name' not found"
     unlink_shared_file "$name" "config.toml"
 }
@@ -474,19 +564,30 @@ cmd_config_relink_all() {
     [[ "${1:-}" == "--force" ]] && force="--force"
     ensure_shared
 
-    local count=0
-    for dir in "$PROFILES_DIR"/*/; do
+    local count=0 skipped=0 skipped_profiles=()
+    for dir in "$PROFILES_DIR"/*/ "$PROFILES_DIR"/.[!.]*/; do
         [[ -d "$dir" ]] || continue
         local name
         name="$(basename "$dir")"
         [[ "$name" == "_shared" ]] && continue
+        if ! is_valid_profile_name "$name"; then
+            warn_invalid_profile_dir "$name"
+            continue
+        fi
 
         if link_shared_file "$name" "config.toml" "$force"; then
             count=$((count + 1))
             echo "  ${C_GREEN}linked${C_RESET}  $name"
+        else
+            skipped=$((skipped + 1))
+            skipped_profiles+=("$name")
         fi
     done
     ok "relinked $count profile(s)"
+    if [[ $skipped -gt 0 ]]; then
+        echo "${C_YELLOW}skip:${C_RESET} skipped $skipped profile(s): ${skipped_profiles[*]}" >&2
+        return 1
+    fi
 }
 
 cmd_shell_init() {
@@ -498,7 +599,7 @@ _codex_profile_apply() {
     if [[ -f "$active_file" ]]; then
         local _name
         _name="$(cat "$active_file" 2>/dev/null)"
-        if [[ -n "$_name" ]]; then
+        if [[ -n "$_name" && "$_name" =~ ^[a-zA-Z0-9_-]+$ && "$_name" != "_shared" && -d "${CODEX_PROFILES_DIR:-$HOME/.codex-profiles}/$_name" ]]; then
             export CODEX_HOME="${CODEX_PROFILES_DIR:-$HOME/.codex-profiles}/$_name"
         fi
     fi
@@ -513,7 +614,7 @@ EOF
 
 cmd_help() {
     cat <<EOF
-${C_BOLD}codex-profile${C_RESET} ??switch between multiple Codex CLI accounts
+${C_BOLD}codex-profile${C_RESET} - switch between multiple Codex CLI accounts
 
 ${C_BOLD}USAGE${C_RESET}
   codex-profile <command> [args]
@@ -525,7 +626,7 @@ ${C_BOLD}COMMANDS${C_RESET}
   ${C_CYAN}import-current${C_RESET} [name]      Import existing ~/.codex as a profile (default: 'default')
   ${C_CYAN}switch${C_RESET} <name>              Make <name> the active profile (no re-login)
   ${C_CYAN}remove${C_RESET} <name>              Delete a profile and all its credentials
-  ${C_CYAN}config${C_RESET} <subcommand>        Manage shared config.toml (MCP servers etc.) ??see: config help
+  ${C_CYAN}config${C_RESET} <subcommand>        Manage shared config.toml (MCP servers etc.) - see: config help
   ${C_CYAN}env${C_RESET}                        Print 'export CODEX_HOME=...' for eval
   ${C_CYAN}run${C_RESET} -- <cmd> [args]        Run a command with the active profile's CODEX_HOME
   ${C_CYAN}shell-init${C_RESET}                 Print a snippet to eval in ~/.zshrc / ~/.bashrc
@@ -575,5 +676,3 @@ main() {
 }
 
 main "$@"
-
-
