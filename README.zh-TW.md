@@ -3,7 +3,14 @@
 [![English](https://img.shields.io/badge/lang-English-lightgrey)](README.md)
 [![繁體中文](https://img.shields.io/badge/lang-繁體中文-blue)](README.zh-TW.md)
 
-透過 `CODEX_HOME` 隔離切換多個 Codex CLI 帳號。每個 profile 各自保存自己的 `auth.json` 跟 sessions;`config.toml`(MCP servers、features)預設跨所有 profile 共用。
+安全切換多個 Codex CLI 帳號。
+
+`codex-profile` 現在支援兩種模式：
+
+- **Minimal auth replacement**：只在命名 profile 和原生 `~/.codex/auth.json` 之間複製 `auth.json`。這是建議的帳號切換方式，因為 sessions、logs、hooks、skills、agents、generated files，以及其他 runtime state 都會留在 Codex 原生管理的 `~/.codex`。
+- **完整 `CODEX_HOME` 相容模式**：保留舊行為，讓 `switch`、`env`、`run`、`shell-init` 把 Codex 指到 `~/.codex-profiles/<profile>`。既有工作流仍可繼續使用。
+
+每個 profile 都有自己的 `auth.json`。`config.toml` 預設透過 `~/.codex-profiles/_shared/config.toml` 在所有 profile 間共用。
 
 ## 安裝
 
@@ -12,7 +19,7 @@ mkdir -p ~/.local/bin
 mv codex-profile ~/.local/bin/
 chmod +x ~/.local/bin/codex-profile
 
-# 讓每個新 shell 自動套用當前 active profile(建議)
+# 可選：讓新 shell 自動套用完整 CODEX_HOME 相容模式。
 echo 'eval "$(codex-profile shell-init)"' >> ~/.zshrc
 exec zsh
 ```
@@ -23,34 +30,48 @@ exec zsh
 
 | 指令 | 作用 |
 |---|---|
-| `list` (alias: `ls`) | 列出所有 profile,active 標 `*`,顯示登入狀態 |
-| `current` (alias: `active`) | 印出目前 active 的 profile 名稱 |
-| `add <name>` | 建立空 profile。第一次跑 `codex` 時會觸發 OAuth |
-| `import-current [name]` | 把現有 `~/.codex` 收編成 profile(預設名稱 `default`)。首次 import 時會把它的 `config.toml` 升格為 shared |
-| `switch <name>` (alias: `use`) | 切到指定 profile。**不會碰 auth**,不會重登 |
-| `remove <name>` (alias: `rm`) | 刪除 profile 跟所有 credential(要打字確認名稱) |
+| `list` (alias: `ls`) | 列出所有 profile，以 `*` 標示 active full-mode profile，並顯示登入狀態 |
+| `current` (alias: `active`) | 印出目前 active full-mode profile 名稱 |
+| `add <name>` | 建立空 profile。第一次以 full mode 跑 `codex` 時可觸發 OAuth |
+| `import-current [name]` | 把現有 `~/.codex` 複製成新 profile（預設名稱 `default`）。首次 import 時會把它的 `config.toml` 升格為 shared file |
+| `switch <name>` (alias: `use`) | 把 `<name>` 設成 active 的完整 `CODEX_HOME` 相容 profile。不會修改原生 auth |
+| `remove <name>` (alias: `rm`) | 停用 profile，並把資料保存在 `_removed/` 底下（需要輸入 profile 名稱確認） |
 
-### 使用 active profile
+### Minimal auth replacement
+
+這些指令只操作 `auth.json`。它們不會複製 sessions、history、logs、cache、hooks、skills、agents、generated images 或 GSD artifacts。
 
 | 指令 | 作用 |
 |---|---|
-| `env` | 印出 `export CODEX_HOME=...`,搭配 `eval "$(codex-profile env)"` 套用到當前 shell |
-| `run -- <cmd> [args]` (alias: `exec`) | 用 active profile 的 `CODEX_HOME` 跑 `<cmd>` |
-| `shell-init` (alias: `init`) | 印出可加到 `~/.zshrc` / `~/.bashrc` 的 snippet,讓每個新 shell 自動套用 |
+| `auth paths <profile>` | 預覽 auth-required source、target、backup 路徑，不讀取 token 內容 |
+| `auth switch <profile>` | 先備份原生 `~/.codex/auth.json`，再用 `<profile>/auth.json` 取代它 |
+| `auth backups` | 列出 managed native auth backups，不讀取 auth 內容 |
+| `auth restore [backup]` | 還原最新或指定名稱的 native auth backup |
+| `auth revert` | 還原最新的 managed native auth backup |
+| `auth prune-backups --keep <count>` | 輸入 `prune` 確認後，刪除較舊的 managed auth backups |
+| `auth help` | 顯示 `auth` 子指令說明 |
+
+### 完整 `CODEX_HOME` 相容模式
+
+| 指令 | 作用 |
+|---|---|
+| `env` | 印出 active full-mode profile 的 `export CODEX_HOME=...`，可搭配 `eval "$(codex-profile env)"` |
+| `run -- <cmd> [args]` (alias: `exec`) | 用 active full-mode profile 的 `CODEX_HOME` 跑 `<cmd>` |
+| `shell-init` (alias: `init`) | 印出可加入 `~/.zshrc` / `~/.bashrc` 的 snippet，讓新 shell 自動套用 active full-mode profile |
 
 ### Shared config (`config.toml`)
 
-`config.toml`(MCP servers、`[features]`、model 預設)從每個 profile symlink 到 `~/.codex-profiles/_shared/config.toml`。改一次,所有 profile 立刻生效。
+`config.toml`（MCP servers、`[features]`、model defaults）會從每個 profile symlink 到 `~/.codex-profiles/_shared/config.toml`。改一次，所有 linked profiles 立刻生效。
 
 | 指令 | 作用 |
 |---|---|
-| `config status` | 顯示 shared config 路徑,跟每個 profile 的 link 狀態(linked / local / missing / broken) |
+| `config status` | 顯示 shared config 路徑，以及每個 profile 的 link 狀態（linked / local / missing / broken） |
 | `config path` | 印出 shared `config.toml` 的路徑 |
 | `config edit` | 用 `$EDITOR` 開 shared `config.toml` |
-| `config link <profile> [--force]` | 把指定 profile 的 `config.toml` 重新 link 到 shared。`--force` 才會覆蓋已存在的本地檔 |
-| `config unlink <profile>` | 把指定 profile 從 shared 拆開(變成獨立的私有檔) |
+| `config link <profile> [--force]` | 把指定 profile 的 `config.toml` 重新 link 到 shared。`--force` 會覆蓋 local copy |
+| `config unlink <profile>` | 把指定 profile 從 shared 拆開（變成 private copy） |
 | `config relink-all [--force]` | 把所有 profile 重新 link 到 shared |
-| `config help` | 顯示 `config` 子指令的說明 |
+| `config help` | 顯示 `config` 子指令說明 |
 
 ### 其他
 
@@ -60,65 +81,116 @@ exec zsh
 
 ## 使用範例
 
-### 1. 從零開始
+### 1. 收編既有的原生 Codex 登入
 
-**你已經有登入過的 `~/.codex`:**
+如果你已經有登入過的 `~/.codex`，可以把它 import 成命名 profile：
 
 ```bash
-# 收編成命名的 profile
 codex-profile import-current work
 codex-profile list
 # *  work    logged in
 ```
 
-**你還沒有任何 Codex 設定:**
+這會得到一份 profile-local 的目前 Codex state，也會產生之後可給 minimal auth replacement 使用的 profile `auth.json`。
+
+### 2. 新增另一個帳號
+
+完整相容模式仍可建立並登入獨立 profile：
 
 ```bash
-codex-profile add work
-codex-profile switch work
-codex                       # 跳瀏覽器 OAuth
-```
-
-### 2. 登入 / 切換 profile
-
-```bash
-# 新增第二個 profile(空的 -> 第一次跑 codex 會 OAuth)
 codex-profile add personal
 codex-profile switch personal
-codex                       # OAuth 登第二個 ChatGPT 帳號
+codex-profile run -- codex     # 第二個 ChatGPT 帳號的 OAuth
+```
 
-# 之後切回去 — 不會重登,每個 profile 的 auth 各自被 cache
-codex-profile switch work
+OAuth 完成後，`~/.codex-profiles/personal/auth.json` 就可以當作 minimal-auth source。
+
+### 3. 用 minimal auth replacement 切換身份
+
+當你只想切換 Codex 帳號、並讓一般 runtime state 留在原生 `~/.codex` 時，使用這個方式：
+
+```bash
+codex-profile auth paths personal
+codex-profile auth switch personal
 codex
 ```
 
-> ⚠️ **切換前一定要關掉所有 codex process。** 否則會撞到
-> `refresh token was already used`(Codex CLI 的 OAuth race condition bug):
+`auth switch` 會先備份目前的原生 `~/.codex/auth.json`，再取代它。它不會碰 `.active`，也不會設定 `CODEX_HOME`。
+
+回到前一份 native auth：
+
+```bash
+codex-profile auth revert
+```
+
+或列出並還原指定 backup：
+
+```bash
+codex-profile auth backups
+codex-profile auth restore auth-20260601T120000Z-12345.json
+```
+
+### 4. 使用完整 `CODEX_HOME` 相容模式
+
+當你明確想讓 Codex 從某個 profile 目錄讀取所有 state 時，使用這個模式：
+
+```bash
+codex-profile switch work
+eval "$(codex-profile env)"
+codex
+```
+
+或只針對單次指令套用，不改目前 shell：
+
+```bash
+codex-profile run -- codex
+```
+
+> 切換完整 `CODEX_HOME` profile 前，請先關閉正在跑的 Codex processes，避免 OAuth refresh race：
+>
 > ```bash
 > pkill -f codex; sleep 2
 > codex-profile switch <name>
 > ```
 
-### 3. Import 現有的 config
+### 5. 從 full profiles 遷移到 minimal auth
 
-跑 `import-current` 時,既有的 `config.toml` 會自動升格成 shared,以後新增的 profile 直接繼承:
+1. 保留既有 profiles。
+2. 確認每個帳號的 profile 都有 `auth.json`。如果沒有，先用 full mode 跑一次：
 
-```bash
-codex-profile import-current work
-# -> 偵測到 ~/.codex/config.toml,搬到 ~/.codex-profiles/_shared/config.toml
-# -> ~/.codex-profiles/work/config.toml 變成指向 shared 的 symlink
+   ```bash
+   codex-profile switch personal
+   codex-profile run -- codex
+   ```
 
-codex-profile add personal
-# personal/config.toml 也是指向 shared 的 symlink
-# -> 你所有的 MCP server 在 'personal' 也馬上可用
-```
+3. 預覽 auth-only paths：
 
-### 4. 編輯 shared config
+   ```bash
+   codex-profile auth paths personal
+   ```
+
+4. 不移動 runtime state，只切換身份：
+
+   ```bash
+   codex-profile auth switch personal
+   unset CODEX_HOME
+   codex
+   ```
+
+5. 必要時回到前一份 native auth：
+
+   ```bash
+   codex-profile auth revert
+   ```
+
+Full profiles 可以繼續留在磁碟上當 auth sources。如果不再需要某個 profile 作為 active full-mode profile，`remove <name>` 會把它封存在 `_removed/`，不會刪掉內容。
+
+### 6. 編輯 shared config
 
 ```bash
 codex-profile config edit
 # 在 $EDITOR 開 ~/.codex-profiles/_shared/config.toml
-# 存檔後 -> 立刻套用到所有 profile(不用 relink)
+# 存檔後 -> 立刻套用到所有 linked profiles
 
 codex-profile config status
 # Shared config: /home/you/.codex-profiles/_shared/config.toml
@@ -129,71 +201,57 @@ codex-profile config status
 #   personal    linked    -> shared
 ```
 
-某個 profile 需要不同設定(罕見,但留個逃生口):
+如果某個 profile 需要不同設定：
 
 ```bash
-codex-profile config unlink personal       # personal/config.toml 變成獨立檔
-$EDITOR ~/.codex-profiles/personal/config.toml   # 獨立編輯
+codex-profile config unlink personal
+$EDITOR ~/.codex-profiles/personal/config.toml
 
-# 後悔了想跟回 shared:
 codex-profile config link personal --force
 ```
 
-### 5. 確認 auth token
+### 7. Auth backup 維護
 
 ```bash
-# 當前 profile 的 auth.json 在哪?
-codex-profile current
-ls -la "$CODEX_HOME/auth.json"
-
-# 看 token 結構(敏感欄位 mask 掉)
-python3 <<'EOF'
-import json, os
-d = json.load(open(f"{os.environ['CODEX_HOME']}/auth.json"))
-print("auth_mode:", "chatgpt" if d.get("tokens") else "apikey")
-t = d.get("tokens", {})
-print("account_id:", t.get("account_id"))
-print("last_refresh:", d.get("last_refresh"))
-print("access_token len:", len(t.get("access_token", "")))
-print("refresh_token len:", len(t.get("refresh_token", "")))
-EOF
-
-# 比對兩個 profile — 如果 account_id 一樣,代表它們共用同一條 OAuth chain(這樣會壞)
-for p in ~/.codex-profiles/*/auth.json; do
-    echo "=== $p ==="
-    python3 -c "import json; print(json.load(open('$p'))['tokens']['account_id'])"
-done
+codex-profile auth backups
+codex-profile auth prune-backups --keep 3
 ```
 
-如果 token 卡在 refresh race 狀態,通常的修法:
+`prune-backups` 只會在明確確認後刪除較舊的 managed backup files。Malformed entries 和 symlinks 會被忽略。
 
-```bash
-pkill -f codex; sleep 2
-codex     # 90% 機率不用重登就能拿到能用的新 token
-```
+## Auth-required vs incidental state
 
-只有上面失敗時才需要完整重登:
+| 路徑 | 範圍 | Minimal auth 指令會使用？ |
+|---|---|---|
+| `auth.json` | 身份 / authentication | 會 |
+| `_shared/auth-backups/auth-*.json` | Native auth rollback | 會 |
+| `config.toml` | MCP servers、settings、model defaults | 不會，只屬於 shared/profile config |
+| `sessions/`、`history.jsonl`、`log/`、`cache/` | Runtime history 和 diagnostics | 不會 |
+| `hooks/`、`skills/`、`agents/`、`generated_images/` | Tooling/runtime artifacts | 不會 |
 
-```bash
-rm "$CODEX_HOME/auth.json"
-codex     # 對這個 profile 做完整 OAuth 重登
-```
+Minimal auth 指令只印 paths 和 status。它們不會印 token values 或 auth file contents。
 
 ## Shared vs Private
 
-| 檔案 | 範圍 |
+| 檔案或目錄 | 範圍 |
 |---|---|
-| `config.toml` | **Shared**,透過 symlink |
-| `auth.json` | 每個 profile 獨立 |
-| `sessions/`、`history.jsonl`、`log/` | 每個 profile 獨立 |
+| `_shared/config.toml` | 透過 symlink 共用 |
+| `_shared/auth-backups/` | Managed native auth backups |
+| `<profile>/auth.json` | 每個 profile 獨立 |
+| `<profile>/sessions/`、`<profile>/history.jsonl`、`<profile>/log/` | Private full-mode runtime state |
+| `_removed/<profile>-removed-*` | 已移除 profile 的封存 |
 
 ## 目錄結構
 
 ```
 ~/.codex-profiles/
 ├── _shared/
-│   └── config.toml              # 真正的 shared config 檔
-├── .active                      # 純文字檔:當前 active profile 名稱
+│   ├── config.toml              # 真正的 shared config
+│   └── auth-backups/
+│       └── auth-*.json          # Managed native auth backups
+├── _removed/
+│   └── work-removed-.../        # 保留下來的 profile archives
+├── .active                      # 純文字：active full-mode profile 名稱
 ├── work/
 │   ├── auth.json
 │   ├── config.toml -> ../_shared/config.toml
@@ -209,19 +267,19 @@ codex     # 對這個 profile 做完整 OAuth 重登
 
 | 變數 | 用途 | 預設值 |
 |---|---|---|
-| `CODEX_HOME` | Codex CLI 讀取所有 state 的位置,由 `codex-profile` 設定 | `~/.codex` |
-| `CODEX_PROFILES_DIR` | `codex-profile` 存放 profile 的位置 | `~/.codex-profiles` |
-| `EDITOR` / `VISUAL` | `config edit` 用的編輯器 | `vi` |
+| `CODEX_HOME` | Codex CLI 讀取 state 的位置。只有完整相容模式指令（`env`、`run`、`shell-init`）會設定它 | `~/.codex` |
+| `CODEX_PROFILES_DIR` | `codex-profile` 存放 profile 目錄的位置 | `~/.codex-profiles` |
+| `EDITOR` / `VISUAL` | `config edit` 使用的編輯器 | `vi` |
 
 ## 移除
 
 ```bash
-# 從 ~/.zshrc / ~/.bashrc 移除 shell-init 那行,然後:
+# 從 ~/.zshrc / ~/.bashrc 移除 shell-init 那行，然後：
 unset CODEX_HOME
 exec zsh
 
-rm -rf ~/.codex-profiles   # 可選,清掉所有 profile
+rm -rf ~/.codex-profiles   # 可選，會清掉 profiles、backups 和 archived removals
 rm ~/.local/bin/codex-profile
 ```
 
-`CODEX_HOME` unset 之後,codex 會回到預設的 `~/.codex`。
+`CODEX_HOME` unset 之後，Codex 會回到預設的 `~/.codex`。
