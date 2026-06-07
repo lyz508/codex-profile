@@ -80,46 +80,77 @@ chmod +x ~/.local/bin/codex-profile
 |---|---|
 | `help` (alias: `-h`, `--help`) | 顯示總體用法 |
 
-## 使用範例
+## Minimal Workflow
 
-### 1. 收編既有的原生 Codex 登入
+`codex-profile` 的日常用法是 auth-only：profile 只提供 `auth.json`，Codex 的 sessions、AGENTS、skills、logs 和其他 runtime state 仍留在原生 `~/.codex`。
 
-如果你已經有登入過的 `~/.codex`，可以把它 import 成命名 profile：
-
-```bash
-codex-profile import-current work
-codex-profile list
-# *  work    logged in
+```text
+codex-profile add <name>          # 建立 profile
+codex-profile home run -- codex   # 只用於登入空 profile
+codex-profile switch <name>       # 切換 native ~/.codex/auth.json
+codex-profile list                # 檢查 profile 狀態
+codex-profile remove <name>       # 封存 profile，不直接刪資料
 ```
 
-這會得到一份 profile-local 的目前 Codex state，也會產生之後可給 minimal auth replacement 使用的 profile `auth.json`。
-
-### 2. 新增另一個帳號
-
-完整相容模式仍可建立並登入獨立 profile：
+### 1. 建立 profile
 
 ```bash
 codex-profile add personal
-codex-profile home switch personal
-codex-profile home run -- codex     # 第二個 ChatGPT 帳號的 OAuth
+codex-profile list
 ```
 
-OAuth 完成後，`~/.codex-profiles/personal/auth.json` 就可以當作 minimal-auth source。
+這會建立 `~/.codex-profiles/personal/`。新 profile 一開始通常沒有 `auth.json`。
 
-### 3. 用 minimal auth replacement 切換身份
+### 2. 登入 profile
 
-當你只想切換 Codex 帳號、並讓一般 runtime state 留在原生 `~/.codex` 時，使用這個方式：
+只在登入空 profile 時使用 full `CODEX_HOME` 相容模式：
+
+```bash
+codex-profile home switch personal
+codex-profile home run -- codex
+```
+
+OAuth 完成後，確認 profile 已有 auth：
+
+```bash
+codex-profile list
+codex-profile auth paths personal
+```
+
+### 3. 切換 profile
+
+回到 auth-only 模式，讓 Codex 繼續使用原生 `~/.codex` runtime state：
+
+```bash
+unset CODEX_HOME
+codex-profile switch personal
+```
+
+`switch` 會先備份目前的 native `~/.codex/auth.json`，再用 profile 的 `auth.json` 取代它。
+
+### 4. 驗證 profile 能不能動
 
 ```bash
 codex-profile auth paths personal
-codex-profile switch personal
-unset CODEX_HOME
+codex-profile auth backups
 codex
 ```
 
-Top-level `switch` 是 auth-only alias，等同 `auth switch`：會先備份目前的原生 `~/.codex/auth.json`，再取代它。它不會碰 `.active`，也不會設定 `CODEX_HOME`。
+如果你只想確認 full-mode profile 本身能啟動，不改目前 shell：
 
-回到前一份 native auth：
+```bash
+codex-profile home run -- codex
+```
+
+### 5. 刪除 profile
+
+```bash
+codex-profile remove personal
+```
+
+`remove` 會要求輸入 profile 名稱確認，然後把資料移到 `~/.codex-profiles/_removed/`，不會直接刪掉 `auth.json` 或 runtime artifacts。
+
+### 6. 回復上一份 native auth
 
 ```bash
 codex-profile auth revert
@@ -132,62 +163,7 @@ codex-profile auth backups
 codex-profile auth restore auth-20260601T120000Z-12345.json
 ```
 
-### 4. 使用完整 `CODEX_HOME` 相容模式
-
-當你明確想讓 Codex 從某個 profile 目錄讀取所有 state 時，使用這個模式：
-
-```bash
-codex-profile home switch work
-eval "$(codex-profile home env)"
-codex
-```
-
-或只針對單次指令套用，不改目前 shell：
-
-```bash
-codex-profile home run -- codex
-```
-
-> 切換完整 `CODEX_HOME` profile 前，請先關閉正在跑的 Codex processes，避免 OAuth refresh race：
->
-> ```bash
-> pkill -f codex; sleep 2
-> codex-profile home switch <name>
-> ```
-
-### 5. 從 full profiles 遷移到 minimal auth
-
-1. 保留既有 profiles。
-2. 確認每個帳號的 profile 都有 `auth.json`。如果沒有，先用 full mode 跑一次：
-
-   ```bash
-   codex-profile home switch personal
-   codex-profile home run -- codex
-   ```
-
-3. 預覽 auth-only paths：
-
-   ```bash
-   codex-profile auth paths personal
-   ```
-
-4. 不移動 runtime state，只切換身份：
-
-   ```bash
-   codex-profile switch personal
-   unset CODEX_HOME
-   codex
-   ```
-
-5. 必要時回到前一份 native auth：
-
-   ```bash
-   codex-profile auth revert
-   ```
-
-Full profiles 可以繼續留在磁碟上當 auth sources。如果不再需要某個 profile 作為 active full-mode profile，`remove <name>` 會把它封存在 `_removed/`，不會刪掉內容。
-
-### 6. 編輯 shared config
+## Shared Config 範例
 
 ```bash
 codex-profile config edit
@@ -212,7 +188,7 @@ $EDITOR ~/.codex-profiles/personal/config.toml
 codex-profile config link personal --force
 ```
 
-### 7. Auth backup 維護
+## Auth Backup 維護
 
 ```bash
 codex-profile auth backups
@@ -272,6 +248,29 @@ Minimal auth 指令只印 paths 和 status。它們不會印 token values 或 au
 | `CODEX_HOME` | Codex CLI 讀取 state 的位置。只有明確的完整相容模式指令（`home env`、`home run`、`home shell-init`）會設定它 | `~/.codex` |
 | `CODEX_PROFILES_DIR` | `codex-profile` 存放 profile 目錄的位置 | `~/.codex-profiles` |
 | `EDITOR` / `VISUAL` | `config edit` 使用的編輯器 | `vi` |
+
+## Troubleshooting
+
+| 情況 | 檢查 / 處理 |
+|---|---|
+| `codex-profile switch <name>` 失敗 | 跑 `codex-profile auth paths <name>`；確認 `~/.codex-profiles/<name>/auth.json` 存在 |
+| Codex 還在使用舊 profile state | 跑 `echo "$CODEX_HOME"`；auth-only 模式應該是空值。需要時 `unset CODEX_HOME` |
+| 誤切 auth | 跑 `codex-profile auth revert` 還原最新 managed backup |
+| 想看 full-mode profile | 使用 `codex-profile home run -- codex`，不要 `eval "$(codex-profile home env)"`，除非你真的要整個 shell 改用該 profile |
+| 想刪 profile 但怕資料遺失 | `remove` 會封存到 `_removed/`；確認後再手動清理 archive |
+| `current/env/run/shell-init` 報錯 | 這些 top-level full-mode 指令已移到 `home current/home env/home run/home shell-init`，避免和 auth-only `switch` 混用 |
+
+重要檔案：
+
+| 路徑 | 重要性 | 備註 |
+|---|---|---|
+| `~/.codex/auth.json` | 高 | Native Codex 目前使用的登入身份；`switch` 會替換它 |
+| `~/.codex-profiles/<name>/auth.json` | 高 | 該 profile 的 auth source；沒有它就不能 auth-only switch |
+| `~/.codex-profiles/_shared/auth-backups/` | 高 | `switch` 前建立的 native auth backups |
+| `~/.codex/config.toml` / `_shared/config.toml` | 中 | MCP、model、approval 等設定；不是 auth-only 切換目標 |
+| `sessions/`、`history.jsonl`、`logs_*.sqlite*` | 中 | 對話與診斷 state；不建議自動合併不同 profile |
+| `skills/`、`agents/`、`hooks/` | 中 | Codex tooling；native `~/.codex` 通常應該是主來源 |
+| `cache/`、`.tmp/`、`log/` | 低 | 通常可重建或只供診斷，清理前仍先確認 |
 
 ## 移除
 

@@ -80,46 +80,77 @@ These commands operate on `auth.json` only. They do not copy sessions, history, 
 |---|---|
 | `help` (alias: `-h`, `--help`) | Show top-level usage |
 
-## Usage examples
+## Minimal Workflow
 
-### 1. Adopt an existing native Codex login
+Daily `codex-profile` usage is auth-only: profiles provide `auth.json`, while Codex sessions, AGENTS, skills, logs, and other runtime state stay under native `~/.codex`.
 
-If you already have a logged-in `~/.codex`, import it as a named profile:
-
-```bash
-codex-profile import-current work
-codex-profile list
-# *  work    logged in
+```text
+codex-profile add <name>          # Create a profile
+codex-profile home run -- codex   # Use only to log in an empty profile
+codex-profile switch <name>       # Switch native ~/.codex/auth.json
+codex-profile list                # Check profile status
+codex-profile remove <name>       # Archive a profile without deleting data
 ```
 
-This gives you a profile-local copy of the current Codex state and a profile `auth.json` that can later be used by minimal auth replacement.
-
-### 2. Add another account
-
-Full compatibility mode can still create and log in an isolated profile:
+### 1. Create a profile
 
 ```bash
 codex-profile add personal
-codex-profile home switch personal
-codex-profile home run -- codex     # OAuth for the second ChatGPT account
+codex-profile list
 ```
 
-After OAuth completes, `~/.codex-profiles/personal/auth.json` can be used as a minimal-auth source.
+This creates `~/.codex-profiles/personal/`. A new profile usually starts without `auth.json`.
 
-### 3. Switch identity with minimal auth replacement
+### 2. Log in to a profile
 
-Use this when you only want to change the Codex account and keep normal runtime state in native `~/.codex`:
+Use full `CODEX_HOME` compatibility mode only to log in an empty profile:
+
+```bash
+codex-profile home switch personal
+codex-profile home run -- codex
+```
+
+After OAuth completes, confirm the profile has auth:
+
+```bash
+codex-profile list
+codex-profile auth paths personal
+```
+
+### 3. Switch profiles
+
+Return to auth-only mode so Codex keeps using native `~/.codex` runtime state:
+
+```bash
+unset CODEX_HOME
+codex-profile switch personal
+```
+
+`switch` backs up the current native `~/.codex/auth.json`, then replaces it from the profile.
+
+### 4. Verify a profile works
 
 ```bash
 codex-profile auth paths personal
-codex-profile switch personal
-unset CODEX_HOME
+codex-profile auth backups
 codex
 ```
 
-Top-level `switch` is an auth-only alias for `auth switch`: it backs up the current native `~/.codex/auth.json` before replacing it. It does not touch `.active` and does not set `CODEX_HOME`.
+To test the full-mode profile itself without changing the current shell:
 
-To return to the previous native auth:
+```bash
+codex-profile home run -- codex
+```
+
+### 5. Remove a profile
+
+```bash
+codex-profile remove personal
+```
+
+`remove` asks you to type the profile name, then moves the data under `~/.codex-profiles/_removed/`. It does not directly delete `auth.json` or runtime artifacts.
+
+### 6. Restore the previous native auth
 
 ```bash
 codex-profile auth revert
@@ -132,62 +163,7 @@ codex-profile auth backups
 codex-profile auth restore auth-20260601T120000Z-12345.json
 ```
 
-### 4. Use full `CODEX_HOME` compatibility mode
-
-Use this when you intentionally want Codex to read all state from a profile directory:
-
-```bash
-codex-profile home switch work
-eval "$(codex-profile home env)"
-codex
-```
-
-Or run a single command without changing the current shell:
-
-```bash
-codex-profile home run -- codex
-```
-
-> Kill running Codex processes before switching full `CODEX_HOME` profiles. Otherwise concurrent OAuth refreshes can race:
->
-> ```bash
-> pkill -f codex; sleep 2
-> codex-profile home switch <name>
-> ```
-
-### 5. Migrate from full profiles to minimal auth
-
-1. Keep your existing profiles.
-2. For each account, make sure the profile has an `auth.json`. If not, run it once in full mode:
-
-   ```bash
-   codex-profile home switch personal
-   codex-profile home run -- codex
-   ```
-
-3. Preview the auth-only paths:
-
-   ```bash
-   codex-profile auth paths personal
-   ```
-
-4. Switch identity without moving runtime state:
-
-   ```bash
-   codex-profile switch personal
-   unset CODEX_HOME
-   codex
-   ```
-
-5. If needed, return to the previous native auth:
-
-   ```bash
-   codex-profile auth revert
-   ```
-
-Full profiles can stay on disk as auth sources. If you no longer need one as an active full-mode profile, `remove <name>` archives it under `_removed/` instead of deleting its contents.
-
-### 6. Editing shared config
+## Shared Config Examples
 
 ```bash
 codex-profile config edit
@@ -212,7 +188,7 @@ $EDITOR ~/.codex-profiles/personal/config.toml
 codex-profile config link personal --force
 ```
 
-### 7. Auth backup maintenance
+## Auth Backup Maintenance
 
 ```bash
 codex-profile auth backups
@@ -272,6 +248,29 @@ Minimal auth commands print paths and status only. They do not print token value
 | `CODEX_HOME` | Where Codex CLI reads its state. Set only by explicit full compatibility commands (`home env`, `home run`, `home shell-init`) | `~/.codex` |
 | `CODEX_PROFILES_DIR` | Where `codex-profile` stores profile directories | `~/.codex-profiles` |
 | `EDITOR` / `VISUAL` | Used by `config edit` | `vi` |
+
+## Troubleshooting
+
+| Situation | Check / fix |
+|---|---|
+| `codex-profile switch <name>` fails | Run `codex-profile auth paths <name>` and confirm `~/.codex-profiles/<name>/auth.json` exists |
+| Codex still uses old profile state | Run `echo "$CODEX_HOME"`; auth-only mode should be empty. Use `unset CODEX_HOME` if needed |
+| Switched auth by mistake | Run `codex-profile auth revert` to restore the latest managed backup |
+| Need to inspect a full-mode profile | Use `codex-profile home run -- codex`; avoid `eval "$(codex-profile home env)"` unless you really want the whole shell to use that profile |
+| Want to remove a profile safely | `remove` archives it under `_removed/`; manually clean archives only after checking them |
+| `current/env/run/shell-init` fails | These top-level full-mode commands moved to `home current/home env/home run/home shell-init` to avoid mixing with auth-only `switch` |
+
+Important files:
+
+| Path | Importance | Notes |
+|---|---|---|
+| `~/.codex/auth.json` | High | Native Codex's current identity; `switch` replaces it |
+| `~/.codex-profiles/<name>/auth.json` | High | The profile's auth source; required for auth-only switching |
+| `~/.codex-profiles/_shared/auth-backups/` | High | Native auth backups created before `switch` |
+| `~/.codex/config.toml` / `_shared/config.toml` | Medium | MCP, model, and approval settings; not the auth-only switch target |
+| `sessions/`, `history.jsonl`, `logs_*.sqlite*` | Medium | Conversation and diagnostics state; avoid automatic cross-profile merges |
+| `skills/`, `agents/`, `hooks/` | Medium | Codex tooling; native `~/.codex` should usually be the source of truth |
+| `cache/`, `.tmp/`, `log/` | Low | Usually rebuildable or diagnostic-only; still inspect before cleaning |
 
 ## Uninstall
 
