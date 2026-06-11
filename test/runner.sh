@@ -68,7 +68,7 @@ run_cli() {
     : > "$STDOUT_FILE"
     : > "$STDERR_FILE"
     set +e
-    HOME="$HOME_FIXTURE" CODEX_PROFILES_DIR="$PROFILES" PATH="$STUB_BIN:$PATH" bash ./codex-profile "$@" >"$STDOUT_FILE" 2>"$STDERR_FILE"
+    HOME="$HOME_FIXTURE" CODEX_PROFILES_DIR="$PROFILES" PATH="$STUB_BIN:$PATH" bash ./codex-accounts "$@" >"$STDOUT_FILE" 2>"$STDERR_FILE"
     local status=$?
     set -e
     printf '%s' "$status" > "$STATUS_FILE"
@@ -82,7 +82,7 @@ run_cli_with_stdin() {
     : > "$STDOUT_FILE"
     : > "$STDERR_FILE"
     set +e
-    HOME="$HOME_FIXTURE" CODEX_PROFILES_DIR="$PROFILES" PATH="$STUB_BIN:$PATH" bash ./codex-profile "$@" >"$STDOUT_FILE" 2>"$STDERR_FILE" <<<"$input"
+    HOME="$HOME_FIXTURE" CODEX_PROFILES_DIR="$PROFILES" PATH="$STUB_BIN:$PATH" bash ./codex-accounts "$@" >"$STDOUT_FILE" 2>"$STDERR_FILE" <<<"$input"
     local status=$?
     set -e
     printf '%s' "$status" > "$STATUS_FILE"
@@ -318,7 +318,7 @@ test_atomic_active_writes_for_switch_and_import() {
     assert_file_content "$PROFILES/.active" "imported"
     compgen -G "$PROFILES/.active.tmp.*" >/dev/null && fail "temporary active files remain after import-current"
 
-    ! grep -v '^[[:space:]]*#' codex-profile | grep -E 'echo "\$name" > "\$STATE_FILE"|> "\$STATE_FILE"' >/dev/null || fail "direct STATE_FILE write remains"
+    ! grep -v '^[[:space:]]*#' codex-accounts | grep -E 'echo "\$name" > "\$STATE_FILE"|> "\$STATE_FILE"' >/dev/null || fail "direct STATE_FILE write remains"
 }
 
 test_safe_remove_rejects_unmanaged_targets() {
@@ -351,7 +351,7 @@ test_safe_remove_rejects_unmanaged_targets() {
     assert_file_exists "$outside/keep.txt"
 
     local remove_body
-    remove_body="$(sed -n '/cmd_remove()/,/^}/p' codex-profile)"
+    remove_body="$(sed -n '/cmd_remove()/,/^}/p' codex-accounts)"
     [[ "$remove_body" == *"assert_safe_profile_target"* ]] || fail "cmd_remove does not call assert_safe_profile_target"
     [[ "$remove_body" == *'mv "$path" "$archive_path"'* ]] || fail "cmd_remove does not archive profile with mv"
     [[ "$remove_body" != *'rm -rf "$path"'* ]] || fail "cmd_remove still deletes profile path"
@@ -455,7 +455,7 @@ test_process_detection_is_narrow_and_best_effort() {
     assert_status 0
     assert_file_content "$PROFILES/.active" "work"
 
-    ! grep -F "pgrep -f 'codex' 2>/dev/null | xargs" codex-profile >/dev/null || fail "raw pgrep -f codex pipeline remains"
+    ! grep -F "pgrep -f 'codex' 2>/dev/null | xargs" codex-accounts >/dev/null || fail "raw pgrep -f codex pipeline remains"
 }
 
 test_auth_paths_preview_is_sanitized_and_fixture_safe() {
@@ -483,7 +483,7 @@ test_auth_paths_preview_is_sanitized_and_fixture_safe() {
     assert_status_nonzero
     assert_output_not_contains_secret_markers "$native_marker" "$profile_marker"
 
-    grep -v '^[[:space:]]*#' codex-profile | grep -F 'cmd_auth_paths' >/dev/null || fail "cmd_auth_paths missing from source"
+    grep -v '^[[:space:]]*#' codex-accounts | grep -F 'cmd_auth_paths' >/dev/null || fail "cmd_auth_paths missing from source"
 }
 
 test_auth_switch_replaces_only_native_auth_and_creates_backup() {
@@ -525,7 +525,7 @@ test_auth_switch_replaces_only_native_auth_and_creates_backup() {
     assert_output_not_contains_secret_markers "$native_marker" "$profile_marker"
 
     local switch_body preview_line backup_line copy_line
-    switch_body="$(sed -n '/cmd_auth_switch()/,/^}/p' codex-profile)"
+    switch_body="$(sed -n '/cmd_auth_switch()/,/^}/p' codex-accounts)"
     preview_line="$(printf '%s\n' "$switch_body" | grep -n 'preview_auth_switch' | head -1 | cut -d: -f1)"
     backup_line="$(printf '%s\n' "$switch_body" | grep -n 'backup_auth_file' | head -1 | cut -d: -f1)"
     copy_line="$(printf '%s\n' "$switch_body" | grep -n 'copy_auth_without_leaking' | head -1 | cut -d: -f1)"
@@ -685,10 +685,10 @@ test_auth_revert_restores_latest_backup_without_leaking_tokens() {
     assert_files_same_without_printing "$HOME_FIXTURE/.codex/auth.json" "$TEST_TMP/native-original.json"
     assert_output_not_contains_secret_markers "$native_marker" "$profile_marker" "access_token" "refresh_token" "account_id"
 
-    grep -v '^[[:space:]]*#' codex-profile | grep -F 'cmd_auth_revert' >/dev/null || fail "cmd_auth_revert missing from source"
-    grep -v '^[[:space:]]*#' codex-profile | grep -F 'revert)' >/dev/null || fail "auth revert missing from dispatcher"
-    sed -n '/cmd_auth_revert()/,/^}/p' codex-profile | grep -F 'latest_auth_backup' >/dev/null || fail "cmd_auth_revert does not call latest_auth_backup"
-    sed -n '/cmd_auth_revert()/,/^}/p' codex-profile | grep -F 'copy_auth_without_leaking' >/dev/null || fail "cmd_auth_revert does not call copy_auth_without_leaking"
+    grep -v '^[[:space:]]*#' codex-accounts | grep -F 'cmd_auth_revert' >/dev/null || fail "cmd_auth_revert missing from source"
+    grep -v '^[[:space:]]*#' codex-accounts | grep -F 'revert)' >/dev/null || fail "auth revert missing from dispatcher"
+    sed -n '/cmd_auth_revert()/,/^}/p' codex-accounts | grep -F 'latest_auth_backup' >/dev/null || fail "cmd_auth_revert does not call latest_auth_backup"
+    sed -n '/cmd_auth_revert()/,/^}/p' codex-accounts | grep -F 'copy_auth_without_leaking' >/dev/null || fail "cmd_auth_revert does not call copy_auth_without_leaking"
 }
 
 test_auth_revert_without_backup_is_failure_safe() {
@@ -743,8 +743,8 @@ test_auth_prune_backups_requires_explicit_confirmation() {
     [[ -L "$PROFILES/_shared/auth-backups/auth-20260104T000000Z-400.json" ]] || fail "symlink backup was unexpectedly removed"
     assert_output_not_contains_secret_markers "$old_marker" "$mid_marker" "$new_marker" "access_token" "refresh_token" "account_id"
 
-    grep -v '^[[:space:]]*#' codex-profile | grep -F 'cmd_auth_prune_backups' >/dev/null || fail "cmd_auth_prune_backups missing from source"
-    sed -n '/cmd_auth_prune_backups()/,/^}/p' codex-profile | grep -F 'safe_auth_backup_path' >/dev/null || fail "cmd_auth_prune_backups does not call safe_auth_backup_path"
+    grep -v '^[[:space:]]*#' codex-accounts | grep -F 'cmd_auth_prune_backups' >/dev/null || fail "cmd_auth_prune_backups missing from source"
+    sed -n '/cmd_auth_prune_backups()/,/^}/p' codex-accounts | grep -F 'safe_auth_backup_path' >/dev/null || fail "cmd_auth_prune_backups does not call safe_auth_backup_path"
 }
 
 test_full_codex_home_mode_remains_compatible_after_auth_commands() {
@@ -793,16 +793,16 @@ EVAL
 
     run_cli env
     assert_status_nonzero
-    assert_stderr_contains "moved to 'codex-profile home env'"
+    assert_stderr_contains "moved to 'codex-accounts home env'"
     run_cli current
     assert_status_nonzero
-    assert_stderr_contains "moved to 'codex-profile home current'"
+    assert_stderr_contains "moved to 'codex-accounts home current'"
     run_cli run -- true
     assert_status_nonzero
-    assert_stderr_contains "moved to 'codex-profile home run'"
+    assert_stderr_contains "moved to 'codex-accounts home run'"
     run_cli shell-init
     assert_status_nonzero
-    assert_stderr_contains "moved to 'codex-profile home shell-init'"
+    assert_stderr_contains "moved to 'codex-accounts home shell-init'"
 
     run_cli help
     assert_status 0
@@ -829,10 +829,10 @@ test_auth_init_wrapper_unsets_codex_home_for_switch() {
     run_cli auth-init
     assert_status 0
 
-    local shim="$STUB_BIN/codex-profile"
+    local shim="$STUB_BIN/codex-accounts"
     cat > "$shim" <<SHIM
 #!/usr/bin/env bash
-exec bash "$PWD/codex-profile" "\$@"
+exec bash "$PWD/codex-accounts" "\$@"
 SHIM
     chmod +x "$shim"
 
@@ -840,7 +840,7 @@ SHIM
     cp "$STDOUT_FILE" "$eval_file"
     cat >> "$eval_file" <<'EVAL'
 CODEX_HOME="$PROFILES/work"
-codex-profile switch personal >/tmp/codex-profile-auth-init.out
+codex-accounts switch personal >/tmp/codex-accounts-auth-init.out
 printf 'CODEX_HOME=%s\n' "${CODEX_HOME:-}"
 EVAL
 

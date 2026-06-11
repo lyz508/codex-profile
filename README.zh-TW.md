@@ -1,30 +1,28 @@
-# codex-profile
+# codex-accounts
 
 [![English](https://img.shields.io/badge/lang-English-lightgrey)](README.md)
 [![繁體中文](https://img.shields.io/badge/lang-繁體中文-blue)](README.zh-TW.md)
 
 安全切換多個 Codex CLI 帳號。
 
-`codex-profile` 現在支援兩種模式：
+`codex-accounts` 現在支援兩種模式：
 
 - **Auth-only switching**：只在命名 profile 和原生 `~/.codex/auth.json` 之間複製 `auth.json`。這是預設帳號切換方式，因為 sessions、logs、hooks、skills、agents、generated files，以及其他 runtime state 都會留在 Codex 原生管理的 `~/.codex`。
-- **完整 `CODEX_HOME` 相容模式**：保留在 `codex-profile home <subcommand>` 底下，讓 Codex 從 `~/.codex-profiles/<profile>` 讀取全部 state。這仍可用於空 profile 的一次性 OAuth 或既有工作流。
+- **完整 `CODEX_HOME` 相容模式**：保留在 `codex-accounts home <subcommand>` 底下，讓 Codex 從 `~/.codex-profiles/<profile>` 讀取全部 state。這仍可用於空 profile 的一次性 OAuth 或既有工作流。
 
 每個 profile 都有自己的 `auth.json`。`config.toml` 預設透過 `~/.codex-profiles/_shared/config.toml` 在所有 profile 間共用。
 
 ## 安裝
 
 ```bash
-mkdir -p ~/.local/bin
-mv codex-profile ~/.local/bin/
-chmod +x ~/.local/bin/codex-profile
+./install.sh
 
 # 建議：讓 auth-only switch 自動清掉目前 shell 的 CODEX_HOME。
-echo 'eval "$(codex-profile auth-init)"' >> ~/.zshrc
+echo 'eval "$(codex-accounts auth-init)"' >> ~/.zshrc
 exec zsh
 
 # 可選的 legacy full-mode hook：
-# echo 'eval "$(codex-profile home shell-init)"' >> ~/.zshrc
+# echo 'eval "$(codex-accounts home shell-init)"' >> ~/.zshrc
 ```
 
 ## 指令列表
@@ -61,7 +59,7 @@ exec zsh
 |---|---|
 | `home switch <profile>` (alias: `home use`) | 把 `<profile>` 設成 active full `CODEX_HOME` 相容 profile |
 | `home current` (alias: `home active`) | 印出目前 active full-mode profile 名稱 |
-| `home env` | 印出 active full-mode profile 的 `export CODEX_HOME=...`，可搭配 `eval "$(codex-profile home env)"` |
+| `home env` | 印出 active full-mode profile 的 `export CODEX_HOME=...`，可搭配 `eval "$(codex-accounts home env)"` |
 | `home run -- <cmd> [args]` (alias: `home exec`) | 用 active full-mode profile 的 `CODEX_HOME` 跑 `<cmd>` |
 | `home shell-init` (alias: `home init`) | 印出 legacy full-mode shell integration snippet |
 
@@ -87,21 +85,21 @@ exec zsh
 
 ## Minimal Workflow
 
-`codex-profile` 的日常用法是 auth-only：profile 只提供 `auth.json`，Codex 的 sessions、AGENTS、skills、logs 和其他 runtime state 仍留在原生 `~/.codex`。
+`codex-accounts` 的日常用法是 auth-only：profile 只提供 `auth.json`，Codex 的 sessions、AGENTS、skills、logs 和其他 runtime state 仍留在原生 `~/.codex`。
 
 ```text
-codex-profile add <name>          # 建立 profile
-codex-profile home run -- codex   # 只用於登入空 profile
-codex-profile switch <name>       # 切換 native ~/.codex/auth.json，並透過 auth-init 清掉 CODEX_HOME
-codex-profile list                # 檢查 profile 狀態
-codex-profile remove <name>       # 封存 profile，不直接刪資料
+codex-accounts add <name>          # 建立 profile
+codex-accounts home run -- codex   # 只用於登入空 profile
+codex-accounts switch <name>       # 切換 native ~/.codex/auth.json，並透過 auth-init 清掉 CODEX_HOME
+codex-accounts list                # 檢查 profile 狀態
+codex-accounts remove <name>       # 封存 profile，不直接刪資料
 ```
 
 ### 1. 建立 profile
 
 ```bash
-codex-profile add personal
-codex-profile list
+codex-accounts add personal
+codex-accounts list
 ```
 
 這會建立 `~/.codex-profiles/personal/`。新 profile 一開始通常沒有 `auth.json`。
@@ -111,15 +109,15 @@ codex-profile list
 只在登入空 profile 時使用 full `CODEX_HOME` 相容模式：
 
 ```bash
-codex-profile home switch personal
-codex-profile home run -- codex
+codex-accounts home switch personal
+codex-accounts home run -- codex
 ```
 
 OAuth 完成後，確認 profile 已有 auth：
 
 ```bash
-codex-profile list
-codex-profile auth paths personal
+codex-accounts list
+codex-accounts auth paths personal
 ```
 
 ### 3. 切換 profile
@@ -127,29 +125,29 @@ codex-profile auth paths personal
 回到 auth-only 模式，讓 Codex 繼續使用原生 `~/.codex` runtime state：
 
 ```bash
-codex-profile switch personal
+codex-accounts switch personal
 ```
 
-如果已安裝 `eval "$(codex-profile auth-init)"`，`switch` 會先在目前 shell 清掉 `CODEX_HOME`，再備份目前的 native `~/.codex/auth.json`，並用 profile 的 `auth.json` 取代它。
+如果已安裝 `eval "$(codex-accounts auth-init)"`，`switch` 會先在目前 shell 清掉 `CODEX_HOME`，再備份目前的 native `~/.codex/auth.json`，並用 profile 的 `auth.json` 取代它。
 
 ### 4. 驗證 profile 能不能動
 
 ```bash
-codex-profile auth paths personal
-codex-profile auth backups
+codex-accounts auth paths personal
+codex-accounts auth backups
 codex
 ```
 
 如果你只想確認 full-mode profile 本身能啟動，不改目前 shell：
 
 ```bash
-codex-profile home run -- codex
+codex-accounts home run -- codex
 ```
 
 ### 5. 刪除 profile
 
 ```bash
-codex-profile remove personal
+codex-accounts remove personal
 ```
 
 `remove` 會要求輸入 profile 名稱確認，然後把資料移到 `~/.codex-profiles/_removed/`，不會直接刪掉 `auth.json` 或 runtime artifacts。
@@ -157,24 +155,24 @@ codex-profile remove personal
 ### 6. 回復上一份 native auth
 
 ```bash
-codex-profile auth revert
+codex-accounts auth revert
 ```
 
 或列出並還原指定 backup：
 
 ```bash
-codex-profile auth backups
-codex-profile auth restore auth-20260601T120000Z-12345.json
+codex-accounts auth backups
+codex-accounts auth restore auth-20260601T120000Z-12345.json
 ```
 
 ## Shared Config 範例
 
 ```bash
-codex-profile config edit
+codex-accounts config edit
 # 在 $EDITOR 開 ~/.codex-profiles/_shared/config.toml
 # 存檔後 -> 立刻套用到所有 linked profiles
 
-codex-profile config status
+codex-accounts config status
 # Shared config: /home/you/.codex-profiles/_shared/config.toml
 #   42 lines, 3 MCP server(s)
 #
@@ -186,17 +184,17 @@ codex-profile config status
 如果某個 profile 需要不同設定：
 
 ```bash
-codex-profile config unlink personal
+codex-accounts config unlink personal
 $EDITOR ~/.codex-profiles/personal/config.toml
 
-codex-profile config link personal --force
+codex-accounts config link personal --force
 ```
 
 ## Auth Backup 維護
 
 ```bash
-codex-profile auth backups
-codex-profile auth prune-backups --keep 3
+codex-accounts auth backups
+codex-accounts auth prune-backups --keep 3
 ```
 
 `prune-backups` 只會在明確確認後刪除較舊的 managed backup files。Malformed entries 和 symlinks 會被忽略。
@@ -250,17 +248,17 @@ Minimal auth 指令只印 paths 和 status。它們不會印 token values 或 au
 | 變數 | 用途 | 預設值 |
 |---|---|---|
 | `CODEX_HOME` | Codex CLI 讀取 state 的位置。只有明確的完整相容模式指令（`home env`、`home run`、`home shell-init`）會設定它 | `~/.codex` |
-| `CODEX_PROFILES_DIR` | `codex-profile` 存放 profile 目錄的位置 | `~/.codex-profiles` |
+| `CODEX_PROFILES_DIR` | `codex-accounts` 存放 profile 目錄的位置 | `~/.codex-profiles` |
 | `EDITOR` / `VISUAL` | `config edit` 使用的編輯器 | `vi` |
 
 ## Troubleshooting
 
 | 情況 | 檢查 / 處理 |
 |---|---|
-| `codex-profile switch <name>` 失敗 | 跑 `codex-profile auth paths <name>`；確認 `~/.codex-profiles/<name>/auth.json` 存在 |
-| Codex 還在使用舊 profile state | 跑 `echo "$CODEX_HOME"`；auth-only 模式應該是空值。建議安裝 `eval "$(codex-profile auth-init)"`，或手動 `unset CODEX_HOME` |
-| 誤切 auth | 跑 `codex-profile auth revert` 還原最新 managed backup |
-| 想看 full-mode profile | 使用 `codex-profile home run -- codex`，不要 `eval "$(codex-profile home env)"`，除非你真的要整個 shell 改用該 profile |
+| `codex-accounts switch <name>` 失敗 | 跑 `codex-accounts auth paths <name>`；確認 `~/.codex-profiles/<name>/auth.json` 存在 |
+| Codex 還在使用舊 profile state | 跑 `echo "$CODEX_HOME"`；auth-only 模式應該是空值。建議安裝 `eval "$(codex-accounts auth-init)"`，或手動 `unset CODEX_HOME` |
+| 誤切 auth | 跑 `codex-accounts auth revert` 還原最新 managed backup |
+| 想看 full-mode profile | 使用 `codex-accounts home run -- codex`，不要 `eval "$(codex-accounts home env)"`，除非你真的要整個 shell 改用該 profile |
 | 想刪 profile 但怕資料遺失 | `remove` 會封存到 `_removed/`；確認後再手動清理 archive |
 | `current/env/run/shell-init` 報錯 | 這些 top-level full-mode 指令已移到 `home current/home env/home run/home shell-init`，避免和 auth-only `switch` 混用 |
 
@@ -279,12 +277,12 @@ Minimal auth 指令只印 paths 和 status。它們不會印 token values 或 au
 ## 移除
 
 ```bash
-# 從 ~/.zshrc / ~/.bashrc 移除任何 legacy `codex-profile home shell-init` 那行，然後：
+# 從 ~/.zshrc / ~/.bashrc 移除任何 legacy `codex-accounts home shell-init` 那行，然後：
 unset CODEX_HOME
 exec zsh
 
 rm -rf ~/.codex-profiles   # 可選，會清掉 profiles、backups 和 archived removals
-rm ~/.local/bin/codex-profile
+rm ~/.local/bin/codex-accounts
 ```
 
 `CODEX_HOME` unset 之後，Codex 會回到預設的 `~/.codex`。

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# codex-profile: switch between Codex CLI accounts through auth-only defaults
+# codex-accounts: switch between Codex CLI accounts through auth-only defaults
 #
 # Each profile stores its own auth.json under ~/.codex-profiles/<name>.
-# Full CODEX_HOME compatibility remains available under `codex-profile home`.
+# Full CODEX_HOME compatibility remains available under `codex-accounts home`.
 
 set -euo pipefail
 
@@ -365,12 +365,12 @@ check_running_codex() {
         command_name="${line%% *}"
         command_name="${command_name##*/}"
         [[ "$command_name" == "codex" ]] || continue
-        [[ "$line" =~ codex-profile|codex-find|test/runner.sh|grep|pgrep ]] && continue
+        [[ "$line" =~ codex-accounts|codex-find|test/runner.sh|grep|pgrep ]] && continue
         pids="${pids}${pid} "
     done
     if [[ -n "$pids" ]]; then
         echo "${C_YELLOW}warning:${C_RESET} codex process(es) still running:" >&2
-        ps -p $pids -o pid,command 2>/dev/null | grep -vE 'codex-profile|codex-find' >&2 || true
+        ps -p $pids -o pid,command 2>/dev/null | grep -vE 'codex-accounts|codex-find' >&2 || true
         echo >&2
         echo "Switching while codex is running can corrupt OAuth refresh tokens." >&2
         echo "Quit them first, or run: ${C_CYAN}pkill -f codex${C_RESET}" >&2
@@ -417,7 +417,7 @@ list_profiles() {
     fi
 
     if [[ $found -eq 0 ]]; then
-        echo "${C_DIM}(no profiles yet - try: codex-profile add <name>)${C_RESET}"
+        echo "${C_DIM}(no profiles yet - try: codex-accounts add <name>)${C_RESET}"
     fi
 }
 
@@ -429,7 +429,7 @@ cmd_list() {
 
 cmd_add() {
     local name="${1:-}"
-    [[ -n "$name" ]] || die "usage: codex-profile add <name>"
+    [[ -n "$name" ]] || die "usage: codex-accounts add <name>"
     validate_profile_name "$name"
 
     ensure_dirs
@@ -437,7 +437,7 @@ cmd_add() {
     path="$(profile_path "$name")"
 
     if profile_exists "$name"; then
-        die "profile '$name' already exists. use 'codex-profile switch $name' instead."
+        die "profile '$name' already exists. use 'codex-accounts switch $name' instead."
     fi
 
     mkdir -p "$path"
@@ -453,9 +453,9 @@ cmd_add() {
     info "linked shared config: ${SHARED_FILES[*]}  ${C_DIM}(MCP servers etc. are inherited)${C_RESET}"
     echo
     echo "Next steps:"
-    echo "  ${C_CYAN}codex-profile home switch $name${C_RESET}"
-    echo "  ${C_CYAN}codex-profile home run -- codex${C_RESET}   ${C_DIM}# one-time OAuth into this profile${C_RESET}"
-    echo "  ${C_CYAN}unset CODEX_HOME && codex-profile switch $name${C_RESET}   ${C_DIM}# auth-only switch after login${C_RESET}"
+    echo "  ${C_CYAN}codex-accounts home switch $name${C_RESET}"
+    echo "  ${C_CYAN}codex-accounts home run -- codex${C_RESET}   ${C_DIM}# one-time OAuth into this profile${C_RESET}"
+    echo "  ${C_CYAN}unset CODEX_HOME && codex-accounts switch $name${C_RESET}   ${C_DIM}# auth-only switch after login${C_RESET}"
 }
 
 cmd_import_current() {
@@ -493,7 +493,7 @@ cmd_import_current() {
                 # diff before deciding which to keep. Tell them.
                 echo "${C_YELLOW}note:${C_RESET} $shared already exists; left imported $f as private."
                 echo "      diff with: ${C_CYAN}diff $imported $shared${C_RESET}"
-                echo "      to switch to shared: ${C_CYAN}codex-profile config link $name${C_RESET}"
+                echo "      to switch to shared: ${C_CYAN}codex-accounts config link $name${C_RESET}"
             fi
         fi
     done
@@ -504,10 +504,10 @@ cmd_import_current() {
 
 cmd_home_switch() {
     local name="${1:-}"
-    [[ -n "$name" ]] || die "usage: codex-profile home switch <name>"
+    [[ -n "$name" ]] || die "usage: codex-accounts home switch <name>"
     validate_profile_name "$name"
 
-    profile_exists "$name" || die "profile '$name' not found. try: codex-profile add $name"
+    profile_exists "$name" || die "profile '$name' not found. try: codex-accounts add $name"
 
     check_running_codex
 
@@ -524,16 +524,16 @@ cmd_home_switch() {
 
     echo
     echo "To use full CODEX_HOME mode in this shell, either:"
-    echo "  ${C_CYAN}eval \"\$(codex-profile home env)\"${C_RESET}"
-    echo "  ${C_CYAN}codex-profile home run -- <cmd>${C_RESET}     ${C_DIM}# e.g. codex-profile home run -- codex${C_RESET}"
+    echo "  ${C_CYAN}eval \"\$(codex-accounts home env)\"${C_RESET}"
+    echo "  ${C_CYAN}codex-accounts home run -- <cmd>${C_RESET}     ${C_DIM}# e.g. codex-accounts home run -- codex${C_RESET}"
     echo
     echo "Auth-only default switch remains:"
-    echo "  ${C_CYAN}codex-profile switch $name${C_RESET}"
+    echo "  ${C_CYAN}codex-accounts switch $name${C_RESET}"
 }
 
 cmd_switch() {
     local name="${1:-}"
-    [[ -n "$name" ]] || die "usage: codex-profile switch <name>"
+    [[ -n "$name" ]] || die "usage: codex-accounts switch <name>"
     cmd_auth_switch "$name"
 }
 
@@ -568,14 +568,14 @@ cmd_home_run() {
     profile_exists "$active" || die "active profile '$active' missing on disk"
 
     if [[ "${1:-}" == "--" ]]; then shift; fi
-    [[ $# -gt 0 ]] || die "usage: codex-profile home run -- <cmd> [args...]"
+    [[ $# -gt 0 ]] || die "usage: codex-accounts home run -- <cmd> [args...]"
 
     CODEX_HOME="$(profile_path "$active")" exec "$@"
 }
 
 cmd_remove() {
     local name="${1:-}"
-    [[ -n "$name" ]] || die "usage: codex-profile remove <name>"
+    [[ -n "$name" ]] || die "usage: codex-accounts remove <name>"
 
     local path archive_path
     path="$(assert_safe_profile_target "$name")"
@@ -627,16 +627,16 @@ cmd_config() {
         unlink)       cmd_config_unlink "$@" ;;
         relink-all)   cmd_config_relink_all "$@" ;;
         help|-h|--help) cmd_config_help ;;
-        *)            die "unknown config subcommand: $sub (try: codex-profile config help)" ;;
+        *)            die "unknown config subcommand: $sub (try: codex-accounts config help)" ;;
     esac
 }
 
 cmd_config_help() {
     cat <<EOF
-${C_BOLD}codex-profile config${C_RESET} - manage shared config across profiles
+${C_BOLD}codex-accounts config${C_RESET} - manage shared config across profiles
 
 ${C_BOLD}USAGE${C_RESET}
-  codex-profile config <subcommand>
+  codex-accounts config <subcommand>
 
 ${C_BOLD}SUBCOMMANDS${C_RESET}
   ${C_CYAN}status${C_RESET}                Show config.toml status for every profile
@@ -708,7 +708,7 @@ cmd_config_status() {
 
 cmd_config_link() {
     local name="${1:-}"
-    [[ -n "$name" ]] || die "usage: codex-profile config link <profile> [--force]"
+    [[ -n "$name" ]] || die "usage: codex-accounts config link <profile> [--force]"
     validate_profile_name "$name"
     profile_exists "$name" || die "profile '$name' not found"
     local force=""
@@ -723,7 +723,7 @@ cmd_config_link() {
 
 cmd_config_unlink() {
     local name="${1:-}"
-    [[ -n "$name" ]] || die "usage: codex-profile config unlink <profile>"
+    [[ -n "$name" ]] || die "usage: codex-accounts config unlink <profile>"
     validate_profile_name "$name"
     profile_exists "$name" || die "profile '$name' not found"
     unlink_shared_file "$name" "config.toml"
@@ -772,16 +772,16 @@ cmd_auth() {
         revert)         cmd_auth_revert "$@" ;;
         prune-backups)  cmd_auth_prune_backups "$@" ;;
         help|-h|--help|"") cmd_auth_help ;;
-        *)              die "unknown auth subcommand: $sub (try: codex-profile auth help)" ;;
+        *)              die "unknown auth subcommand: $sub (try: codex-accounts auth help)" ;;
     esac
 }
 
 cmd_auth_help() {
     cat <<EOF
-${C_BOLD}codex-profile auth${C_RESET} - manage minimal Codex auth replacement
+${C_BOLD}codex-accounts auth${C_RESET} - manage minimal Codex auth replacement
 
 ${C_BOLD}USAGE${C_RESET}
-  codex-profile auth <subcommand>
+  codex-accounts auth <subcommand>
 
 ${C_BOLD}SUBCOMMANDS${C_RESET}
   ${C_CYAN}paths${C_RESET} <profile>       Preview auth-required paths without reading token contents
@@ -797,13 +797,13 @@ ${C_BOLD}SAFETY MODEL${C_RESET}
   Minimal auth commands operate on auth.json only. They do not copy sessions,
   history, logs, cache, or other Codex runtime state.
   Top-level switch/use are auth-only aliases. Full CODEX_HOME compatibility mode
-  is available under codex-profile home <subcommand>.
+  is available under codex-accounts home <subcommand>.
 EOF
 }
 
 cmd_auth_paths() {
     local name="${1:-}"
-    [[ -n "$name" ]] || die "usage: codex-profile auth paths <profile>"
+    [[ -n "$name" ]] || die "usage: codex-accounts auth paths <profile>"
     validate_profile_name "$name"
     profile_exists "$name" || die "profile '$name' not found"
     print_auth_required_paths "$name"
@@ -811,7 +811,7 @@ cmd_auth_paths() {
 
 cmd_auth_switch() {
     local name="${1:-}"
-    [[ -n "$name" ]] || die "usage: codex-profile auth switch <profile>"
+    [[ -n "$name" ]] || die "usage: codex-accounts auth switch <profile>"
     validate_profile_name "$name"
     profile_exists "$name" || die "profile '$name' not found"
 
@@ -870,7 +870,7 @@ cmd_auth_restore() {
 }
 
 cmd_auth_revert() {
-    [[ -z "${1:-}" ]] || die "usage: codex-profile auth revert"
+    [[ -z "${1:-}" ]] || die "usage: codex-accounts auth revert"
 
     local backup_path
     backup_path="$(latest_auth_backup)"
@@ -886,10 +886,10 @@ cmd_auth_revert() {
 }
 
 cmd_auth_prune_backups() {
-    [[ "${1:-}" == "--keep" && -n "${2:-}" ]] || die "usage: codex-profile auth prune-backups --keep <count>"
+    [[ "${1:-}" == "--keep" && -n "${2:-}" ]] || die "usage: codex-accounts auth prune-backups --keep <count>"
     local keep="$2"
     [[ "$keep" =~ ^[0-9]+$ ]] || die "--keep must be a non-negative integer"
-    [[ -z "${3:-}" ]] || die "usage: codex-profile auth prune-backups --keep <count>"
+    [[ -z "${3:-}" ]] || die "usage: codex-accounts auth prune-backups --keep <count>"
 
     local backups total stale_count
     backups="$(list_auth_backups)"
@@ -927,7 +927,7 @@ cmd_auth_prune_backups() {
 cmd_shell_init() {
     # Sets CODEX_HOME for every new shell, based on the active profile.
     cat <<'EOF'
-# --- codex-profile shell integration ---
+# --- codex-accounts shell integration ---
 _codex_profile_apply() {
     local active_file="${CODEX_PROFILES_DIR:-$HOME/.codex-profiles}/.active"
     if [[ -f "$active_file" ]]; then
@@ -942,33 +942,33 @@ _codex_profile_apply
 # Optional: show active profile in your prompt.
 # For zsh, you can add:  PROMPT='%F{cyan}[${CODEX_HOME##*/}]%f '"$PROMPT"
 # For bash, you can add: PS1='\[\e[36m\][${CODEX_HOME##*/}]\[\e[0m\] '"$PS1"
-# --- end codex-profile ---
+# --- end codex-accounts ---
 EOF
 }
 
 cmd_auth_init() {
     # Defines a shell wrapper so auth-only switch can unset CODEX_HOME in the
-    # caller shell before invoking the real codex-profile executable.
+    # caller shell before invoking the real codex-accounts executable.
     cat <<'EOF'
-# --- codex-profile auth-only shell integration ---
-codex-profile() {
+# --- codex-accounts auth-only shell integration ---
+codex-accounts() {
     case "${1:-}" in
         switch|use)
             unset CODEX_HOME
-            command codex-profile "$@"
+            command codex-accounts "$@"
             ;;
         auth)
             if [[ "${2:-}" == "switch" ]]; then
                 unset CODEX_HOME
             fi
-            command codex-profile "$@"
+            command codex-accounts "$@"
             ;;
         *)
-            command codex-profile "$@"
+            command codex-accounts "$@"
             ;;
     esac
 }
-# --- end codex-profile auth-only shell integration ---
+# --- end codex-accounts auth-only shell integration ---
 EOF
 }
 
@@ -983,21 +983,21 @@ cmd_home() {
         run|exec)        cmd_home_run "$@" ;;
         shell-init|init) cmd_shell_init "$@" ;;
         help|-h|--help|"") cmd_home_help ;;
-        *)               die "unknown home subcommand: $sub (try: codex-profile home help)" ;;
+        *)               die "unknown home subcommand: $sub (try: codex-accounts home help)" ;;
     esac
 }
 
 cmd_full_mode_moved() {
     local old="$1" replacement="$2"
-    die "'codex-profile $old' is full CODEX_HOME mode and moved to 'codex-profile home $replacement'. Default switching is auth-only: codex-profile switch <profile>"
+    die "'codex-accounts $old' is full CODEX_HOME mode and moved to 'codex-accounts home $replacement'. Default switching is auth-only: codex-accounts switch <profile>"
 }
 
 cmd_home_help() {
     cat <<EOF
-${C_BOLD}codex-profile home${C_RESET} - explicit full CODEX_HOME compatibility mode
+${C_BOLD}codex-accounts home${C_RESET} - explicit full CODEX_HOME compatibility mode
 
 ${C_BOLD}USAGE${C_RESET}
-  codex-profile home <subcommand>
+  codex-accounts home <subcommand>
 
 ${C_BOLD}SUBCOMMANDS${C_RESET}
   ${C_CYAN}switch${C_RESET} <profile>      Set active full-mode profile
@@ -1009,16 +1009,16 @@ ${C_BOLD}SUBCOMMANDS${C_RESET}
 
 ${C_BOLD}WHEN TO USE${C_RESET}
   Use this only for one-time OAuth into an empty profile or legacy workflows.
-  The default identity switch is auth-only: codex-profile switch <profile>.
+  The default identity switch is auth-only: codex-accounts switch <profile>.
 EOF
 }
 
 cmd_help() {
     cat <<EOF
-${C_BOLD}codex-profile${C_RESET} - switch between multiple Codex CLI accounts
+${C_BOLD}codex-accounts${C_RESET} - switch between multiple Codex CLI accounts
 
 ${C_BOLD}USAGE${C_RESET}
-  codex-profile <command> [args]
+  codex-accounts <command> [args]
 
 ${C_BOLD}COMMANDS${C_RESET}
   ${C_CYAN}list${C_RESET}                       Show profiles (* = current native auth)
@@ -1042,18 +1042,18 @@ ${C_BOLD}SHARED VS PRIVATE${C_RESET}
 
 ${C_BOLD}TYPICAL FLOW${C_RESET}
   ${C_DIM}# first time: bring your existing native auth into a profile${C_RESET}
-  codex-profile import-current work
+  codex-accounts import-current work
 
   ${C_DIM}# switch identity while keeping runtime state under ~/.codex${C_RESET}
-  codex-profile switch work
+  codex-accounts switch work
 
   ${C_DIM}# add another account; use full mode only for one-time OAuth${C_RESET}
-  codex-profile add personal
-  codex-profile home switch personal
-  codex-profile home run -- codex     ${C_DIM}# creates profile auth.json${C_RESET}
+  codex-accounts add personal
+  codex-accounts home switch personal
+  codex-accounts home run -- codex     ${C_DIM}# creates profile auth.json${C_RESET}
 
   ${C_DIM}# after OAuth, return to auth-only switching${C_RESET}
-  codex-profile switch personal
+  codex-accounts switch personal
 
 ${C_BOLD}PROFILES LOCATION${C_RESET}
   $PROFILES_DIR
@@ -1080,7 +1080,7 @@ main() {
         config)               cmd_config "$@" ;;
         shell-init|init)      cmd_full_mode_moved "$cmd" "$cmd" ;;
         help|-h|--help)       cmd_help ;;
-        *)                    die "unknown command: $cmd (try: codex-profile help)" ;;
+        *)                    die "unknown command: $cmd (try: codex-accounts help)" ;;
     esac
 }
 
